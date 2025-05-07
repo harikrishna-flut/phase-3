@@ -1,62 +1,53 @@
-# fraud_model.py
+# credit_card_fraud_detection.py
+
 import pandas as pd
-from sklearn.model_selection import train_test_split
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import classification_report
-import joblib
-
-# Load dataset (you can use 'creditcard.csv' from Kaggle)
-df = pd.read_csv("creditcard.csv")  # Replace with your path
-
-# Split features and label
-X = df.drop("Class", axis=1)
-y = df["Class"]  # 1 = Fraud, 0 = Legitimate
-
-# Split data
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, stratify=y, random_state=42)
-
-# Train model
-model = RandomForestClassifier(n_estimators=100, random_state=42)
-model.fit(X_train, y_train)
-
-# Evaluate
-y_pred = model.predict(X_test)
-print(classification_report(y_test, y_pred))
-
-# Save the model
-joblib.dump(model, "fraud_detection_model.pkl")
-print("Model saved.")
-# app.py
-from flask import Flask, request, jsonify
 import numpy as np
-import joblib
-import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
 
-app = Flask(__name__)
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+from sklearn.metrics import classification_report, confusion_matrix, roc_auc_score, RocCurveDisplay
+from imblearn.over_sampling import SMOTE
 
-# Load trained model
-model = joblib.load("fraud_detection_model.pkl")
+# Load the dataset
+df = pd.read_csv('creditcard.csv')  # You must download the dataset manually from Kaggle
 
-@app.route("/predict", methods=["POST"])
-def predict():
-    try:
-        # Example: Receive JSON with a transaction's features
-        data = request.get_json(force=True)
+# Overview
+print("Dataset shape:", df.shape)
+print("Fraudulent transactions:", df['Class'].sum())
 
-        # Convert to DataFrame (assuming features match model input)
-        transaction = pd.DataFrame([data])
+# Handle class imbalance with SMOTE
+X = df.drop('Class', axis=1)
+y = df['Class']
 
-        # Predict
-        prediction = model.predict(transaction)[0]
-        probability = model.predict_proba(transaction)[0][1]
+# Standardize 'Amount' and drop 'Time'
+X['Amount'] = StandardScaler().fit_transform(X[['Amount']])
+X = X.drop(['Time'], axis=1)
 
-        return jsonify({
-            "fraudulent": bool(prediction),
-            "probability": round(probability, 4)
-        })
-    except Exception as e:
-        return jsonify({"error": str(e)})
+# Split the data
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42, stratify=y)
 
-if __name__ == "__main__":
-    app.run(debug=True)
+# Apply SMOTE
+sm = SMOTE(random_state=42)
+X_train_res, y_train_res = sm.fit_resample(X_train, y_train)
 
+print("After SMOTE - Training set class distribution:\n", pd.Series(y_train_res).value_counts())
+
+# Train a Random Forest model
+model = RandomForestClassifier(n_estimators=100, random_state=42)
+model.fit(X_train_res, y_train_res)
+
+# Predict and evaluate
+y_pred = model.predict(X_test)
+y_prob = model.predict_proba(X_test)[:, 1]
+
+print("\nClassification Report:\n", classification_report(y_test, y_pred))
+print("Confusion Matrix:\n", confusion_matrix(y_test, y_pred))
+print("ROC-AUC Score:", roc_auc_score(y_test, y_prob))
+
+# Plot ROC Curve
+RocCurveDisplay.from_estimator(model, X_test, y_test)
+plt.title("ROC Curve")
+plt.show()
