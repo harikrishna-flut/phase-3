@@ -1,0 +1,53 @@
+# credit_card_fraud_detection.py
+
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+from sklearn.metrics import classification_report, confusion_matrix, roc_auc_score, RocCurveDisplay
+from imblearn.over_sampling import SMOTE
+
+# Load the dataset
+df = pd.read_csv('creditcard.csv')  # You must download the dataset manually from Kaggle
+
+# Overview
+print("Dataset shape:", df.shape)
+print("Fraudulent transactions:", df['Class'].sum())
+
+# Handle class imbalance with SMOTE
+X = df.drop('Class', axis=1)
+y = df['Class']
+
+# Standardize 'Amount' and drop 'Time'
+X['Amount'] = StandardScaler().fit_transform(X[['Amount']])
+X = X.drop(['Time'], axis=1)
+
+# Split the data
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42, stratify=y)
+
+# Apply SMOTE
+sm = SMOTE(random_state=42)
+X_train_res, y_train_res = sm.fit_resample(X_train, y_train)
+
+print("After SMOTE - Training set class distribution:\n", pd.Series(y_train_res).value_counts())
+
+# Train a Random Forest model
+model = RandomForestClassifier(n_estimators=100, random_state=42)
+model.fit(X_train_res, y_train_res)
+
+# Predict and evaluate
+y_pred = model.predict(X_test)
+y_prob = model.predict_proba(X_test)[:, 1]
+
+print("\nClassification Report:\n", classification_report(y_test, y_pred))
+print("Confusion Matrix:\n", confusion_matrix(y_test, y_pred))
+print("ROC-AUC Score:", roc_auc_score(y_test, y_prob))
+
+# Plot ROC Curve
+RocCurveDisplay.from_estimator(model, X_test, y_test)
+plt.title("ROC Curve")
+plt.show()
